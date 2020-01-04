@@ -2,9 +2,11 @@
 # -*- coding: utf-8 -*-
 
 import sys, traceback
-from twisted.python import log
+import logging as log
 from gazouilleur import config
 from .colorize import colorize
+
+logg.getLogger("asyncio").setLevel(logging.INFO)
 
 COLOR_LOGS = (str(getattr(config, "COLOR_LOGS", "true")).lower() == "true")
 def colr(text, color, bold=True):
@@ -35,7 +37,7 @@ def _context(channel=None, action=None, debug=True):
 
 def logg(text, color=None, channel=None, action=None, error=False, debug=False):
     try:
-        return log.msg(_logg(text, color, error), system=_context(channel, action, debug))
+        return log.info(_logg(text, color, error))
     except UnicodeDecodeError as e:
         print "WARNING: weird UnicodeDecodeError detected"
         traceback.print_stack()
