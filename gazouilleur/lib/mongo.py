@@ -1,12 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+"""
+MongoDB manager for gazouilleur.
+Handles all communications necessary.
+"""
+
 import time
-from twisted.internet.defer import inlineCallbacks, returnValue as returnD
+import asyncio
 from pymongo.errors import OperationFailure
 from txmongo import MongoConnection, connection
 from txmongo.filter import sort as mongosort, ASCENDING, DESCENDING
-from gazouilleur.config import DEBUG, MONGODB
+from gazouilleur.config import MONGODB
 connection._Connection.noisy = False
 
 db_foll_coll = lambda x: "followers.%s" % x.lower().lstrip("@")
@@ -19,67 +24,79 @@ def sortdesc(field):
     return mongosort(DESCENDING(field))
 
 
-@inlineCallbacks
-def SingleMongo(coll, method, *args, **kwargs):
+
+async def SingleMongo(coll, method, *args, **kwargs):
     conn = MongoConnection(MONGODB['HOST'], MONGODB['PORT'])
-    db = conn[MONGODB['DATABASE']]
-    yield db.authenticate(MONGODB['USER'], MONGODB['PSWD'])
-    res = yield getattr(db[coll], method)(*args, **kwargs)
+    database = conn[MONGODB['DATABASE']]
+    await database.authenticate(MONGODB['USER'], MONGODB['PSWD'])
+    res = await getattr(database[coll], method)(*args, **kwargs)
     conn.disconnect()
-    returnD(res)
+    return res
 
-@inlineCallbacks
-def save_lasttweet_id(channel, tweet_id):
-    yield SingleMongo('lasttweets', 'update', {'channel': channel}, {'channel': channel, 'tweet_id': tweet_id}, upsert=True)
 
-@inlineCallbacks
-def find_stats(query, **kwargs):
-    res = yield SingleMongo('stats', 'find', query, **kwargs)
-    returnD(res)
+async def save_lasttweet_id(channel, tweet_id):
+    await SingleMongo(
+        'lasttweets',
+        'update',
+        {'channel': channel},
+        {'channel': channel, 'tweet_id': tweet_id},
+        upsert=True
+    )
 
-@inlineCallbacks
-def count_followers(user):
-    res = yield SingleMongo(db_foll_coll(user), 'find', {"follows_me": True})
-    returnD(len(res))
 
-@inlineCallbacks
-def find_last_followers(user):
-    res = yield SingleMongo(db_foll_coll(user), 'find', {"screen_name": {"$exists": True}, "follows_me": True, "last_update": {"$gte": time.time() - 12*3600}})
-    returnD(res)
+async def find_stats(query, **kwargs):
+    res = await SingleMongo('stats', 'find', query, **kwargs)
+    return res
 
-@inlineCallbacks
-def ensure_indexes(db, retry=True):
+
+async def count_followers(user):
+    res = await SingleMongo(db_foll_coll(user), 'find', {"follows_me": True})
+    return len(res)
+
+
+async def find_last_followers(user):
+    res = await SingleMongo(
+        db_foll_coll(user),
+        'find',
+        {"screen_name": {"$exists": True},
+         "follows_me": True,
+         "last_update": {"$gte": time.time() - 12*3600}}
+    )
+    return res
+
+
+async def ensure_indexes(database, retry=True):
     try:
-        yield db['logs'].ensure_index(sortasc('channel') + sortdesc('timestamp'), background=True)
-        yield db['logs'].ensure_index(sortasc('channel') + sortasc('user'), background=True)
-        yield db['logs'].ensure_index(sortasc('channel') + sortasc('user') + sortdesc('timestamp'), background=True)
-        yield db['tasks'].ensure_index(sortasc('channel') + sortasc('timestamp'), background=True)
-        yield db['feeds'].ensure_index(sortasc('database') + sortasc('timestamp'), background=True)
-        yield db['feeds'].ensure_index(sortasc('channel') + sortasc('database'), background=True)
-        yield db['feeds'].ensure_index(sortasc('channel') + sortasc('database') + sortdesc('timestamp'), background=True)
-        yield db['filters'].ensure_index(sortasc('channel'), background=True)
-        yield db['filters'].ensure_index(sortasc('channel') + sortasc('keyword') + sortdesc('timestamp'), background=True)
-        yield db['news'].ensure_index(sortdesc('_id') + sortasc('channel'), background=True)
-        yield db['news'].ensure_index(sortasc('channel') + sortdesc('timestamp'), background=True)
-        yield db['news'].ensure_index(sortasc('channel') + sortasc('source'), background=True)
-        yield db['news'].ensure_index(sortasc('channel') + sortasc('source') + sortdesc('timestamp'), background=True)
-        yield db['dms'].ensure_index(sortasc('id') + sortasc('channel'), background=True)
-        yield db['tweets'].ensure_index(sortasc('id'), background=True)
-        yield db['tweets'].ensure_index(sortasc('in_reply_to_status_id_str'), background=True)
-        yield db['tweets'].ensure_index(sortasc('channel') + sortdesc('id'), background=True)
-        yield db['tweets'].ensure_index(sortasc('channel') + sortdesc('timestamp'), background=True)
-        yield db['tweets'].ensure_index(sortasc('channel') + sortasc('id') + sortdesc('timestamp'), background=True)
-        yield db['tweets'].ensure_index(sortasc('channel') + sortasc('user') + sortdesc('timestamp'), background=True)
-        yield db['tweets'].ensure_index(sortasc('channel') + sortasc('uniq_rt_hash'), background=True)
-        yield db['tweets'].ensure_index(sortdesc('id') + sortasc('channel') + sortasc('uniq_rt_hash'), background=True)
-        yield db['stats'].ensure_index(sortdesc('timestamp') + sortasc('user'), background=True)
-        yield db['lasttweets'].ensure_index(sortasc('channel'), background=True)
-    except OperationFailure as e:
+        await database['logs'].ensure_index(sortasc('channel') + sortdesc('timestamp'), background=True)
+        await database['logs'].ensure_index(sortasc('channel') + sortasc('user'), background=True)
+        await database['logs'].ensure_index(sortasc('channel') + sortasc('user') + sortdesc('timestamp'), background=True)
+        await database['tasks'].ensure_index(sortasc('channel') + sortasc('timestamp'), background=True)
+        await database['feeds'].ensure_index(sortasc('database') + sortasc('timestamp'), background=True)
+        await database['feeds'].ensure_index(sortasc('channel') + sortasc('database'), background=True)
+        await database['feeds'].ensure_index(sortasc('channel') + sortasc('database') + sortdesc('timestamp'), background=True)
+        await database['filters'].ensure_index(sortasc('channel'), background=True)
+        await database['filters'].ensure_index(sortasc('channel') + sortasc('keyword') + sortdesc('timestamp'), background=True)
+        await database['news'].ensure_index(sortdesc('_id') + sortasc('channel'), background=True)
+        await database['news'].ensure_index(sortasc('channel') + sortdesc('timestamp'), background=True)
+        await database['news'].ensure_index(sortasc('channel') + sortasc('source'), background=True)
+        await database['news'].ensure_index(sortasc('channel') + sortasc('source') + sortdesc('timestamp'), background=True)
+        await database['dms'].ensure_index(sortasc('id') + sortasc('channel'), background=True)
+        await database['tweets'].ensure_index(sortasc('id'), background=True)
+        await database['tweets'].ensure_index(sortasc('in_reply_to_status_id_str'), background=True)
+        await database['tweets'].ensure_index(sortasc('channel') + sortdesc('id'), background=True)
+        await database['tweets'].ensure_index(sortasc('channel') + sortdesc('timestamp'), background=True)
+        await database['tweets'].ensure_index(sortasc('channel') + sortasc('id') + sortdesc('timestamp'), background=True)
+        await database['tweets'].ensure_index(sortasc('channel') + sortasc('user') + sortdesc('timestamp'), background=True)
+        await database['tweets'].ensure_index(sortasc('channel') + sortasc('uniq_rt_hash'), background=True)
+        await database['tweets'].ensure_index(sortdesc('id') + sortasc('channel') + sortasc('uniq_rt_hash'), background=True)
+        await database['stats'].ensure_index(sortdesc('timestamp') + sortasc('user'), background=True)
+        await database['lasttweets'].ensure_index(sortasc('channel'), background=True)
+    except OperationFailure as error:
         # catch and destroy old indices built with older pymongo versions
         if retry:
             for coll in ["logs", "tasks", "feeds", "filters", "news", "dms", "tweets", "stats", "lasttweets"]:
-                yield db[coll].drop_indexes()
-            yield ensure_indexes(db, retry=False)
+                await database[coll].drop_indexes()
+            await ensure_indexes(database, retry=False)
         else:
-            raise e
+            raise error
 
