@@ -10,7 +10,7 @@ try:
 except:
     URL_STATS = None
 
-class Templater(object):
+class Templater:
 
     def __init__(self):
         self.public_url = '%s/' % URL_STATS.rstrip('/') if URL_STATS else None
